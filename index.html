@@ -484,7 +484,7 @@
     var t = document.getElementById('toast');
     t.textContent = msg;
     t.classList.add('show');
-    setTimeout(function(){ t.classList.remove('show'); }, 1100);
+    setTimeout(function(){ t.classList.remove('show'); }, 1800);
   }
 
   function playCard(playerIdx, cardIdx, chosenColor){
@@ -649,7 +649,19 @@
     var player = state.players[0];
     var top = topCard();
     var hasPlayable = player.hand.some(function(c){ return canPlay(c, top, state.activeColor); });
-    if(hasPlayable){ toast('You have a playable card'); return; }
+    if(hasPlayable){
+      toast("You have a playable card \u2014 play it first!");
+      var pile = document.getElementById('drawPile');
+      pile.style.transition = 'transform 0.1s';
+      pile.style.transform = 'translateX(-6px)';
+      setTimeout(function(){ pile.style.transform = 'translateX(6px)'; }, 100);
+      setTimeout(function(){ pile.style.transform = 'translateX(0)'; }, 200);
+      var handEl = document.getElementById('hand');
+      var cards = handEl.querySelectorAll('.card.playable');
+      cards.forEach(function(c){ c.classList.add('lift'); });
+      setTimeout(function(){ cards.forEach(function(c){ c.classList.remove('lift'); }); }, 900);
+      return;
+    }
     drawCards(0,1);
     if(tg){ tg.HapticFeedback && tg.HapticFeedback.impactOccurred('medium'); }
     render();
