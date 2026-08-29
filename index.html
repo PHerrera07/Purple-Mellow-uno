@@ -272,6 +272,7 @@
     <div class="status" id="status">Dealing...</div>
     <div class="btn-row" id="actionRow" style="display:none;">
       <button class="btn gold" id="unoBtn">Call UNO</button>
+      <button class="btn" id="passBtn" style="display:none;">Pass</button>
     </div>
   </div>
 
@@ -625,6 +626,8 @@
     var top = topCard();
     if(!canPlay(card, top, state.activeColor)) return;
     if(tg){ tg.HapticFeedback && tg.HapticFeedback.impactOccurred('light'); }
+    state.awaitingPass = false;
+    document.getElementById('passBtn').style.display='none';
     if(card.color==='wild'){
       pendingHumanCard = idx;
       document.getElementById('colorPicker').style.display='flex';
@@ -648,32 +651,34 @@
     if(state.finished || state.turn!==0) return;
     var player = state.players[0];
     var top = topCard();
-    var hasPlayable = player.hand.some(function(c){ return canPlay(c, top, state.activeColor); });
-    if(hasPlayable){
-      toast("You have a playable card \u2014 play it first!");
-      var pile = document.getElementById('drawPile');
-      pile.style.transition = 'transform 0.1s';
-      pile.style.transform = 'translateX(-6px)';
-      setTimeout(function(){ pile.style.transform = 'translateX(6px)'; }, 100);
-      setTimeout(function(){ pile.style.transform = 'translateX(0)'; }, 200);
-      var handEl = document.getElementById('hand');
-      var cards = handEl.querySelectorAll('.card.playable');
-      cards.forEach(function(c){ c.classList.add('lift'); });
-      setTimeout(function(){ cards.forEach(function(c){ c.classList.remove('lift'); }); }, 900);
-      return;
-    }
     drawCards(0,1);
     if(tg){ tg.HapticFeedback && tg.HapticFeedback.impactOccurred('medium'); }
-    render();
     var drawn = player.hand[player.hand.length-1];
     if(drawn && canPlay(drawn, top, state.activeColor)){
-      toast('Drew a playable card!');
+      toast('Drew a playable card \u2014 play it or pass');
+      state.awaitingPass = true;
+      render();
+      document.getElementById('actionRow').style.display='flex';
+      document.getElementById('passBtn').style.display='inline-block';
     } else {
+      toast('Drew a card \u2014 turn passes');
+      render();
       nextTurn(false);
       render();
       setStatus(state.players[state.turn].name+" is thinking...", 'turn-cpu');
       setTimeout(cpuTurn, 700);
     }
+  });
+
+  document.getElementById('passBtn').addEventListener('click', function(){
+    if(state.turn!==0 || !state.awaitingPass) return;
+    state.awaitingPass = false;
+    document.getElementById('passBtn').style.display='none';
+    if(state.players[0].hand.length!==1) document.getElementById('actionRow').style.display='none';
+    nextTurn(false);
+    render();
+    setStatus(state.players[state.turn].name+" is thinking...", 'turn-cpu');
+    setTimeout(cpuTurn, 700);
   });
 
   document.getElementById('unoBtn').addEventListener('click', function(){
