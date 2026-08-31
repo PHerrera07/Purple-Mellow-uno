@@ -650,24 +650,14 @@
   document.getElementById('drawPile').addEventListener('click', function(){
     if(state.finished || state.turn!==0) return;
     var player = state.players[0];
-    var top = topCard();
     drawCards(0,1);
     if(tg){ tg.HapticFeedback && tg.HapticFeedback.impactOccurred('medium'); }
-    var drawn = player.hand[player.hand.length-1];
-    if(drawn && canPlay(drawn, top, state.activeColor)){
-      toast('Drew a playable card \u2014 play it or pass');
-      state.awaitingPass = true;
-      render();
-      document.getElementById('actionRow').style.display='flex';
-      document.getElementById('passBtn').style.display='inline-block';
-    } else {
-      toast('Drew a card \u2014 turn passes');
-      render();
-      nextTurn(false);
-      render();
-      setStatus(state.players[state.turn].name+" is thinking...", 'turn-cpu');
-      setTimeout(cpuTurn, 700);
-    }
+    toast('Drew a card \u2014 turn passes');
+    render();
+    nextTurn(false);
+    render();
+    setStatus(state.players[state.turn].name+" is thinking...", 'turn-cpu');
+    setTimeout(cpuTurn, 700);
   });
 
   document.getElementById('passBtn').addEventListener('click', function(){
