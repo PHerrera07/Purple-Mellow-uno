@@ -338,8 +338,8 @@
   var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
   if(tg){ tg.ready(); tg.expand(); }
 
-  var SUPABASE_URL = 'YOUR_SUPABASE_URL';
-  var SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+  var SUPABASE_URL = 'sb_publishable_h-SIUAmR2BnP1rXFgjZy3A_NEOpd65n';
+  var SUPABASE_ANON_KEY = 'https://ozywcgesxkezmhvyrvxv.supabase.co/rest/v1/';
   var LEADERBOARD_ENABLED = SUPABASE_URL.indexOf('YOUR_') !== 0;
   var sb = LEADERBOARD_ENABLED && window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
