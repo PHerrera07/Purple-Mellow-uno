@@ -353,8 +353,8 @@
 
   function sbHeaders(){
     return {
-      'apikey': eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im96eXdjZ2VzeGtlem1odnlydnh2Iiwicm9sZSI6ImFub24iLCJpYXQiOj,
-      'Authorization': 'Bearer ' + eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im96eXdjZ2VzeGtlem1odnlydnh2Iiwicm9sZSI6ImFub24iLCJpYXQiOj,
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
       'Content-Type': 'application/json',
       'Prefer': 'resolution=merge-duplicates,return=minimal'
     };
@@ -605,12 +605,20 @@
       '<div class="big-ghost">'+(won?'👻✨':'😮')+'</div>'+
       '<h1>'+(won?'You win the hand!':'Round lost')+'</h1>'+
       '<p>'+(won?('You earned +'+pts+' $P from the other ghosts\' hands.'):'The ghosts held better cards this time. Run it back?')+'</p>'+
-      '<button class="primary-btn" id="playAgainBtn">Play again</button>';
+      '<button class="primary-btn" id="playAgainBtn">Play again</button>'+
+      (won?'<button class="btn gold" id="endLbBtn" style="padding:10px 24px;font-size:14px;">🏆 Leaderboard</button>':'');
     document.getElementById('app').appendChild(ov);
     document.getElementById('playAgainBtn').onclick = function(){
       ov.remove();
       newGame();
     };
+    if(won){
+      document.getElementById('endLbBtn').onclick = function(){
+        ov.remove();
+        document.getElementById('lbOverlay').style.display='flex';
+        renderLeaderboard();
+      };
+    }
   }
 
   function cpuHasUno(idx){ return state.players[idx].hand.length===1; }
@@ -853,7 +861,7 @@
   var STALE_MS = 22000;
 
   function mpHeaders(extra){
-    var h = { 'apikey': eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im96eXdjZ2VzeGtlem1odnlydnh2Iiwicm9sZSI6ImFub24iLCJpYXQiOj, 'Authorization': 'Bearer ' + eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im96eXdjZ2VzeGtlem1odnlydnh2Iiwicm9sZSI6ImFub24iLCJpYXQiOj, 'Content-Type':'application/json' };
+    var h = { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY, 'Content-Type':'application/json' };
     if(extra) for(var k in extra) h[k]=extra[k];
     return h;
   }
