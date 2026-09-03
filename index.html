@@ -341,7 +341,7 @@
   var SUPABASE_URL = 'https://ozywcgesxkezmhvyrvxv.supabase.co';
   var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im96eXdjZ2VzeGtlem1odnlydnh2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgxNjA0OTQsImV4cCI6MjEwMzczNjQ5NH0.RaWgR1U7y8vOFSgYu6W6kBQKUbu-dt08X9cg8_t-RAA';
   var LEADERBOARD_ENABLED = SUPABASE_URL.indexOf('YOUR_') !== 0;
-  var sb = LEADERBOARD_ENABLED && window.supabase ? window.supabase.createClient(SUPABASE_URL, eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im96eXdjZ2VzeGtlem1odnlydnh2Iiwicm9sZSI6ImFub24iLCJpYXQiOj) : null;
+  var sb = LEADERBOARD_ENABLED && window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
   var tgUser = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) ? tg.initDataUnsafe.user : null;
   var myTelegramId = tgUser ? String(tgUser.id) : 'local_' + (localStorage.getItem('pm_uno_localid') || (function(){
