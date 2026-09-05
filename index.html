@@ -351,29 +351,27 @@
   })());
   var myUsername = tgUser ? (tgUser.username || tgUser.first_name || 'Ghost') : 'Guest Ghost';
 
-  function sbHeaders(){
-    return {
-      'apikey': SUPABASE_ANON_KEY,
-      'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
-      'Content-Type': 'application/json',
-      'Prefer': 'resolution=merge-duplicates,return=minimal'
-    };
+  function sbHeaders(extra){
+    var h = { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY, 'Content-Type':'application/json' };
+    if(extra) for(var k in extra) h[k]=extra[k];
+    return h;
   }
 
   function submitScore(newTotal){
-    if(!LEADERBOARD_ENABLED) return;
-    fetch(SUPABASE_URL + '/rest/v1/leaderboard?on_conflict=telegram_id', {
-      method: 'POST',
-      headers: sbHeaders(),
-      body: JSON.stringify([{ telegram_id: myTelegramId, username: myUsername, score: newTotal }])
-    }).catch(function(){});
+    if(!sb) return;
+    sb.from('leaderboard')
+      .upsert([{ telegram_id: myTelegramId, username: myUsername, score: newTotal }], { onConflict: 'telegram_id' })
+      .then(function(){}).catch(function(){});
   }
 
   function fetchLeaderboard(cb){
-    if(!LEADERBOARD_ENABLED){ cb(null); return; }
-    fetch(SUPABASE_URL + '/rest/v1/leaderboard?select=username,score,telegram_id&order=score.desc&limit=20', {
-      headers: sbHeaders()
-    }).then(function(r){ return r.json(); }).then(function(data){ cb(data); }).catch(function(){ cb(null); });
+    if(!sb){ cb(null); return; }
+    sb.from('leaderboard')
+      .select('username,score,telegram_id')
+      .order('score', { ascending: false })
+      .limit(20)
+      .then(function(res){ cb(res.data || []); })
+      .catch(function(){ cb(null); });
   }
 
   var COLORS = ['red','purple','green','gold'];
@@ -816,7 +814,7 @@
 
   function renderLeaderboard(){
     var list = document.getElementById('lbList');
-    if(!LEADERBOARD_ENABLED){
+    if(!sb){
       list.innerHTML = '<p style="color:var(--muted);font-size:13px;">Leaderboard not connected yet. Add your Supabase URL and key in the code to enable it.</p>';
       return;
     }
@@ -864,8 +862,7 @@
     var h = { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY, 'Content-Type':'application/json' };
     if(extra) for(var k in extra) h[k]=extra[k];
     return h;
-  }
-  function genCode(){
+  }  function genCode(){
     var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     var out='';
     for(var i=0;i<5;i++) out += chars[Math.floor(Math.random()*chars.length)];
