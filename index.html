@@ -358,20 +358,35 @@
   }
 
   function submitScore(newTotal){
-    if(!sb) return;
-    sb.from('leaderboard')
-      .upsert([{ telegram_id: myTelegramId, username: myUsername, score: newTotal }], { onConflict: 'telegram_id' })
-      .then(function(){}).catch(function(){});
+    if(!LEADERBOARD_ENABLED) return;
+    fetch(SUPABASE_URL + '/rest/v1/leaderboard', {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates,return=minimal'
+      },
+      body: JSON.stringify({ telegram_id: myTelegramId, username: myUsername, score: newTotal })
+    }).catch(function(){});
   }
 
   function fetchLeaderboard(cb){
-    if(!sb){ cb(null); return; }
-    sb.from('leaderboard')
-      .select('username,score,telegram_id')
-      .order('score', { ascending: false })
-      .limit(20)
-      .then(function(res){ cb(res.data || []); })
-      .catch(function(){ cb(null); });
+    if(!LEADERBOARD_ENABLED){ cb(null); return; }
+    fetch(SUPABASE_URL + '/rest/v1/leaderboard?select=username,score,telegram_id&order=score.desc&limit=20', {
+      method: 'GET',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json'
+      }
+    })
+    .then(function(r){
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(data){ cb(data); })
+    .catch(function(e){ console.error('LB fetch error:', e); cb(null); });
   }
 
   var COLORS = ['red','purple','green','gold'];
@@ -814,8 +829,8 @@
 
   function renderLeaderboard(){
     var list = document.getElementById('lbList');
-    if(!sb){
-      list.innerHTML = '<p style="color:var(--muted);font-size:13px;">Leaderboard not connected yet. Add your Supabase URL and key in the code to enable it.</p>';
+    if(!LEADERBOARD_ENABLED){
+      list.innerHTML = '<p style="color:var(--muted);font-size:13px;">Leaderboard not connected yet.</p>';
       return;
     }
     list.innerHTML = '<p style="color:var(--muted);font-size:13px;">Loading...</p>';
