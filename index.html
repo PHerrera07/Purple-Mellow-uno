@@ -863,7 +863,7 @@
   }
 
   // ---------- Matchmaking + Multiplayer (Supabase Realtime) ----------
-  var mp = { gameId:null, meId:myTelegramId, meName:myUsername, channel:null, heartbeat:null, watchdog:null, matchEnded:false, queueTimer:null, queueSeconds:0, queueChannel:null };
+  var mp = { gameId:null, meId:myTelegramId, meName:myUsername, channel:null, heartbeat:null, watchdog:null, matchEnded:false, queueTimer:null, queueSeconds:0, queueChannel:null, pollInterval:null };
   var mpGame = null;
   var STALE_MS = 22000;
   var QUEUE_TIMEOUT = 30;
@@ -896,11 +896,16 @@
     document.getElementById('mqSpinner').style.display='block';
     document.getElementById('mqTimer').textContent = '0s';
 
-    // Remove stale self from queue first, then try to match
+    // Remove stale self from queue first
     fetch(SUPABASE_URL + '/rest/v1/queue?player_id=eq.' + mp.meId, {
       method: 'DELETE',
       headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY }
-    }).then(function(){ tryMatch(); }).catch(function(){ tryMatch(); });
+    }).then(function(){
+      // Small random delay (0-800ms) so two simultaneous players don't collide
+      setTimeout(tryMatch, Math.floor(Math.random() * 800));
+    }).catch(function(){
+      setTimeout(tryMatch, Math.floor(Math.random() * 800));
+    });
 
     mp.queueTimer = setInterval(function(){
       mp.queueSeconds++;
@@ -910,34 +915,61 @@
   }
 
   function tryMatch(){
-    // Look for someone already waiting in queue
+    if(!document.getElementById('mpLobby') || document.getElementById('mpLobby').style.display==='none') return;
     fetch(SUPABASE_URL + '/rest/v1/queue?order=joined_at.asc&limit=1', {
       headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY }
     }).then(function(r){ return r.json(); }).then(function(rows){
       if(rows && rows.length > 0 && rows[0].player_id !== mp.meId){
-        // Found an opponent — create the game and remove both from queue
         var opp = rows[0];
-        createMatchWith(opp);
+        // Try to delete opponent from queue atomically — if we get it, we create the game
+        fetch(SUPABASE_URL + '/rest/v1/queue?player_id=eq.' + opp.player_id, {
+          method: 'DELETE',
+          headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY, 'Prefer': 'return=representation' }
+        }).then(function(r){ return r.json(); }).then(function(deleted){
+          if(deleted && deleted.length > 0){
+            // We claimed the opponent — create the match
+            createMatchWith(opp);
+          } else {
+            // Someone else got them first — join queue instead
+            joinQueue();
+          }
+        }).catch(function(){ joinQueue(); });
       } else {
-        // Nobody waiting — join the queue and wait
         joinQueue();
       }
     }).catch(function(){ joinQueue(); });
   }
 
   function joinQueue(){
+    if(!document.getElementById('mpLobby') || document.getElementById('mpLobby').style.display==='none') return;
     fetch(SUPABASE_URL + '/rest/v1/queue', {
       method: 'POST',
       headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
       body: JSON.stringify({ player_id: mp.meId, player_name: mp.meName })
     }).then(function(){
-      // Watch for a game being created for us via Realtime
-      mp.queueChannel = sb.channel('queue-watch-' + mp.meId)
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'games',
-          filter: 'player2_id=eq.' + mp.meId }, function(payload){
-          clearMatchmaking();
-          startMpMatch(payload.new, false);
-        }).subscribe();
+      // Watch via Realtime for a game being created for us
+      if(sb){
+        mp.queueChannel = sb.channel('queue-watch-' + mp.meId)
+          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'games',
+            filter: 'player2_id=eq.' + mp.meId }, function(payload){
+            clearMatchmaking();
+            mp.gameId = payload.new.id;
+            startMpMatch(payload.new, false);
+          }).subscribe();
+      }
+      // Also poll every 3s as a fallback in case Realtime misses it
+      mp.pollInterval = setInterval(function(){
+        if(!document.getElementById('mpLobby') || document.getElementById('mpLobby').style.display==='none'){ clearInterval(mp.pollInterval); return; }
+        fetch(SUPABASE_URL + '/rest/v1/games?player2_id=eq.'+mp.meId+'&status=eq.active&order=id.desc&limit=1', {
+          headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY }
+        }).then(function(r){ return r.json(); }).then(function(rows){
+          if(rows && rows.length > 0 && rows[0].id !== mp.gameId){
+            clearMatchmaking();
+            mp.gameId = rows[0].id;
+            startMpMatch(rows[0], false);
+          }
+        }).catch(function(){});
+      }, 3000);
     }).catch(function(){ toastGlobal('Could not join queue'); });
   }
 
@@ -971,7 +1003,8 @@
   function clearMatchmaking(){
     if(mp.queueTimer) clearInterval(mp.queueTimer);
     if(mp.queueChannel) mp.queueChannel.unsubscribe();
-    mp.queueTimer = null; mp.queueChannel = null; mp.queueSeconds = 0;
+    if(mp.pollInterval) clearInterval(mp.pollInterval);
+    mp.queueTimer=null; mp.queueChannel=null; mp.queueSeconds=0; mp.pollInterval=null;
   }
 
   function cancelMatchmaking(){
