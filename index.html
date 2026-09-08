@@ -227,6 +227,7 @@
   }
   .color-opt:active{transform:scale(0.94);}
 
+  @keyframes spin{ to{ transform:rotate(360deg); } }
   .toast{
     position:absolute;top:52px;left:50%;transform:translateX(-50%);
     background:rgba(201,168,92,0.95);
@@ -301,25 +302,18 @@
   <div class="overlay" id="startOverlay">
     <div class="big-ghost">👻</div>
     <h1>Purple Mellow Uno</h1>
-    <p>Beat two mellow ghosts, or challenge a friend in real time. Win rounds to stack up $P points.</p>
+    <p>Beat two mellow ghosts or jump into a live match against another player. Win rounds to stack up $P points.</p>
     <button class="primary-btn" id="startBtn">Vs the ghosts</button>
-    <button class="btn gold" id="mpStartBtn" style="padding:10px 24px;font-size:14px;">Vs a friend</button>
+    <button class="btn gold" id="mpStartBtn" style="padding:10px 24px;font-size:14px;">⚡ Find a match</button>
   </div>
 
   <div class="overlay" id="mpLobby" style="display:none;">
-    <div class="big-ghost">🔮</div>
-    <h1>Play a friend</h1>
-    <p id="mpLobbyMsg">Create a match and send the code, or join one you were sent.</p>
-    <button class="primary-btn" id="mpCreateBtn">Create match</button>
-    <div style="display:flex;gap:8px;align-items:center;">
-      <input id="mpCodeInput" placeholder="Enter code" maxlength="5" style="width:110px;text-align:center;text-transform:uppercase;font-size:16px;font-weight:800;padding:10px;border-radius:10px;border:1px solid var(--purple);background:rgba(255,255,255,0.05);color:var(--text);">
-      <button class="btn" id="mpJoinBtn">Join</button>
-    </div>
-    <div id="mpWaitBox" style="display:none;flex-direction:column;align-items:center;gap:10px;">
-      <div class="score-pill" id="mpCodeDisplay" style="font-size:18px;padding:10px 20px;"></div>
-      <p style="font-size:13px;">Share this code. Waiting for your friend to join...</p>
-    </div>
-    <button class="btn" id="mpBackBtn">Back</button>
+    <div class="big-ghost" id="mqGhost">🔮</div>
+    <h1 id="mqTitle">Finding opponent...</h1>
+    <p id="mqMsg">Searching for another ghost to challenge. Hang tight...</p>
+    <div id="mqSpinner" style="width:48px;height:48px;border:4px solid rgba(139,92,246,0.2);border-top-color:var(--purple);border-radius:50%;animation:spin 1s linear infinite;"></div>
+    <div id="mqTimer" style="font-size:13px;color:var(--muted);">0s</div>
+    <button class="btn" id="mpBackBtn" style="margin-top:8px;">Cancel</button>
   </div>
 
   <div class="color-picker" id="mpColorPicker" style="display:none;">
@@ -868,21 +862,12 @@
     tg.MainButton && tg.MainButton.hide();
   }
 
-  // ---------- Multiplayer (Supabase Realtime + reconnect) ----------
-  var mp = { code:null, gameId:null, meId:myTelegramId, meName:myUsername, channel:null, heartbeat:null, watchdog:null, matchEnded:false };
+  // ---------- Matchmaking + Multiplayer (Supabase Realtime) ----------
+  var mp = { gameId:null, meId:myTelegramId, meName:myUsername, channel:null, heartbeat:null, watchdog:null, matchEnded:false, queueTimer:null, queueSeconds:0, queueChannel:null };
   var mpGame = null;
   var STALE_MS = 22000;
+  var QUEUE_TIMEOUT = 30;
 
-  function mpHeaders(extra){
-    var h = { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY, 'Content-Type':'application/json' };
-    if(extra) for(var k in extra) h[k]=extra[k];
-    return h;
-  }  function genCode(){
-    var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    var out='';
-    for(var i=0;i<5;i++) out += chars[Math.floor(Math.random()*chars.length)];
-    return out;
-  }
   function toastGlobal(msg){
     var t = document.getElementById('toast');
     t.textContent = msg;
@@ -891,95 +876,138 @@
   }
 
   document.getElementById('mpStartBtn').addEventListener('click', function(){
-    if(!LEADERBOARD_ENABLED || !sb){ toastGlobal('Add your Supabase keys first to enable multiplayer'); return; }
+    if(!LEADERBOARD_ENABLED){ toastGlobal('Add your Supabase keys first to enable multiplayer'); return; }
     document.getElementById('startOverlay').style.display='none';
     document.getElementById('mpLobby').style.display='flex';
-    checkResumableMatch();
+    startMatchmaking();
   });
+
   document.getElementById('mpBackBtn').addEventListener('click', function(){
-    teardownMp();
+    cancelMatchmaking();
     document.getElementById('mpLobby').style.display='none';
-    document.getElementById('mpWaitBox').style.display='none';
     document.getElementById('startOverlay').style.display='flex';
   });
 
-  function checkResumableMatch(){
-    var saved = localStorage.getItem('pm_uno_activematch');
-    if(!saved) return;
-    var info = JSON.parse(saved);
-    fetch(SUPABASE_URL + '/rest/v1/games?id=eq.'+info.gameId+'&select=*', { headers: mpHeaders() })
-      .then(function(r){ return r.json(); }).then(function(rows){
-        var g = rows && rows[0];
-        if(g && g.status==='active' && !(g.state && g.state.finished)){
-          document.getElementById('mpLobbyMsg').innerHTML = 'You have a match in progress. <span id="mpResumeBtn" style="color:var(--green);text-decoration:underline;">Resume it</span>';
-          document.getElementById('mpResumeBtn').onclick = function(){
-            mp.gameId = g.id; mp.code = g.code;
-            startMpMatch(g, g.player1_id===mp.meId);
-          };
-        } else {
-          localStorage.removeItem('pm_uno_activematch');
-        }
-      }).catch(function(){});
+  function startMatchmaking(){
+    mp.queueSeconds = 0;
+    document.getElementById('mqGhost').textContent = '🔮';
+    document.getElementById('mqTitle').textContent = 'Finding opponent...';
+    document.getElementById('mqMsg').textContent = 'Searching for another ghost to challenge. Hang tight...';
+    document.getElementById('mqSpinner').style.display='block';
+    document.getElementById('mqTimer').textContent = '0s';
+
+    // Remove stale self from queue first, then try to match
+    fetch(SUPABASE_URL + '/rest/v1/queue?player_id=eq.' + mp.meId, {
+      method: 'DELETE',
+      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY }
+    }).then(function(){ tryMatch(); }).catch(function(){ tryMatch(); });
+
+    mp.queueTimer = setInterval(function(){
+      mp.queueSeconds++;
+      document.getElementById('mqTimer').textContent = mp.queueSeconds + 's';
+      if(mp.queueSeconds >= QUEUE_TIMEOUT){ queueTimeout(); }
+    }, 1000);
   }
 
-  document.getElementById('mpCreateBtn').addEventListener('click', function(){
+  function tryMatch(){
+    // Look for someone already waiting in queue
+    fetch(SUPABASE_URL + '/rest/v1/queue?order=joined_at.asc&limit=1', {
+      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY }
+    }).then(function(r){ return r.json(); }).then(function(rows){
+      if(rows && rows.length > 0 && rows[0].player_id !== mp.meId){
+        // Found an opponent — create the game and remove both from queue
+        var opp = rows[0];
+        createMatchWith(opp);
+      } else {
+        // Nobody waiting — join the queue and wait
+        joinQueue();
+      }
+    }).catch(function(){ joinQueue(); });
+  }
+
+  function joinQueue(){
+    fetch(SUPABASE_URL + '/rest/v1/queue', {
+      method: 'POST',
+      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ player_id: mp.meId, player_name: mp.meName })
+    }).then(function(){
+      // Watch for a game being created for us via Realtime
+      mp.queueChannel = sb.channel('queue-watch-' + mp.meId)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'games',
+          filter: 'player2_id=eq.' + mp.meId }, function(payload){
+          clearMatchmaking();
+          startMpMatch(payload.new, false);
+        }).subscribe();
+    }).catch(function(){ toastGlobal('Could not join queue'); });
+  }
+
+  function createMatchWith(opp){
+    var deck = shuffle(buildDeck());
+    var hands = {};
+    hands[opp.player_id] = [];
+    hands[mp.meId] = [];
+    for(var i=0;i<7;i++){ hands[opp.player_id].push(deck.pop()); hands[mp.meId].push(deck.pop()); }
+    var top = deck.pop();
+    while(top.value==='+4'){ deck.unshift(top); shuffle(deck); top = deck.pop(); }
+    var gameState = { deck:deck, discard:[top], hands:hands, turn:opp.player_id, direction:1, activeColor:top.color, finished:false };
+    var now = new Date().toISOString();
     var code = genCode();
     fetch(SUPABASE_URL + '/rest/v1/games', {
-      method:'POST',
-      headers: mpHeaders({'Prefer':'return=representation'}),
-      body: JSON.stringify([{ code:code, player1_id:mp.meId, player1_name:mp.meName, status:'waiting' }])
+      method: 'POST',
+      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+      body: JSON.stringify([{ code:code, player1_id:opp.player_id, player1_name:opp.player_name, player2_id:mp.meId, player2_name:mp.meName, status:'active', state:gameState, last_seen_p1:now, last_seen_p2:now }])
     }).then(function(r){ return r.json(); }).then(function(rows){
-      var row = rows[0];
-      mp.gameId = row.id; mp.code = code;
-      document.getElementById('mpCodeDisplay').textContent = code;
-      document.getElementById('mpWaitBox').style.display='flex';
-      mp.channel = sb.channel('game-'+row.id)
-        .on('postgres_changes', {event:'UPDATE', schema:'public', table:'games', filter:'id=eq.'+row.id}, function(payload){
-          var g = payload.new;
-          if(g.status==='active'){
-            mp.channel.unsubscribe();
-            startMpMatch(g, true);
-          }
-        }).subscribe();
+      // Remove both players from queue
+      fetch(SUPABASE_URL + '/rest/v1/queue?player_id=in.(' + opp.player_id + ',' + mp.meId + ')', {
+        method: 'DELETE',
+        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY }
+      }).catch(function(){});
+      clearMatchmaking();
+      mp.gameId = rows[0].id;
+      startMpMatch(rows[0], true);
     }).catch(function(){ toastGlobal('Could not create match'); });
-  });
+  }
 
-  document.getElementById('mpJoinBtn').addEventListener('click', function(){
-    var code = document.getElementById('mpCodeInput').value.trim().toUpperCase();
-    if(!code){ toastGlobal('Enter a code first'); return; }
-    fetch(SUPABASE_URL + '/rest/v1/games?code=eq.'+code+'&status=eq.waiting&select=*', {
-      headers: mpHeaders()
-    }).then(function(r){ return r.json(); }).then(function(rows){
-      if(!rows || rows.length===0){ toastGlobal('No open match with that code'); return; }
-      var g = rows[0];
-      var deck = shuffle(buildDeck());
-      var hands = {};
-      hands[g.player1_id] = [];
-      hands[mp.meId] = [];
-      for(var i=0;i<7;i++){ hands[g.player1_id].push(deck.pop()); hands[mp.meId].push(deck.pop()); }
-      var top = deck.pop();
-      while(top.color==='wild'){ deck.unshift(top); top = deck.pop(); }
-      var gameState = {
-        deck:deck, discard:[top], hands:hands,
-        turn:g.player1_id, direction:1, activeColor:top.color, finished:false
-      };
-      var now = new Date().toISOString();
-      fetch(SUPABASE_URL + '/rest/v1/games?id=eq.'+g.id, {
-        method:'PATCH',
-        headers: mpHeaders({'Prefer':'return=representation'}),
-        body: JSON.stringify({ player2_id:mp.meId, player2_name:mp.meName, status:'active', state:gameState, last_seen_p1:now, last_seen_p2:now })
-      }).then(function(r){ return r.json(); }).then(function(rows2){
-        mp.gameId = g.id; mp.code = g.code;
-        startMpMatch(rows2[0], false);
-      });
-    }).catch(function(){ toastGlobal('Could not join match'); });
-  });
+  function clearMatchmaking(){
+    if(mp.queueTimer) clearInterval(mp.queueTimer);
+    if(mp.queueChannel) mp.queueChannel.unsubscribe();
+    mp.queueTimer = null; mp.queueChannel = null; mp.queueSeconds = 0;
+  }
+
+  function cancelMatchmaking(){
+    clearMatchmaking();
+    fetch(SUPABASE_URL + '/rest/v1/queue?player_id=eq.' + mp.meId, {
+      method: 'DELETE',
+      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY }
+    }).catch(function(){});
+  }
+
+  function queueTimeout(){
+    clearMatchmaking();
+    cancelMatchmaking();
+    document.getElementById('mqGhost').textContent = '😴';
+    document.getElementById('mqTitle').textContent = 'No opponents found';
+    document.getElementById('mqMsg').textContent = 'Nobody is in the queue right now. Try again or challenge your community to play!';
+    document.getElementById('mqSpinner').style.display='none';
+    document.getElementById('mqTimer').textContent = '';
+    var retryBtn = document.createElement('button');
+    retryBtn.className = 'primary-btn';
+    retryBtn.textContent = 'Try again';
+    retryBtn.onclick = function(){ retryBtn.remove(); startMatchmaking(); };
+    document.getElementById('mpBackBtn').parentNode.insertBefore(retryBtn, document.getElementById('mpBackBtn'));
+  }
+
+  function genCode(){
+    var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    var out=''; for(var i=0;i<5;i++) out += chars[Math.floor(Math.random()*chars.length)];
+    return out;
+  }
 
   function pushMpState(extra){
     var body = { state:mpGame.state, status:mpGame.status, winner_id:mpGame.winner_id||null };
     if(extra) for(var k in extra) body[k]=extra[k];
     return fetch(SUPABASE_URL + '/rest/v1/games?id=eq.'+mp.gameId, {
-      method:'PATCH', headers: mpHeaders(), body: JSON.stringify(body)
+      method:'PATCH', headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+SUPABASE_ANON_KEY, 'Content-Type':'application/json' }, body:JSON.stringify(body)
     });
   }
 
@@ -987,9 +1015,9 @@
   function oppLastSeenField(){ return mpGame.player1_id===mp.meId ? 'last_seen_p2' : 'last_seen_p1'; }
 
   function startMpMatch(g, iAmP1){
-    mpGame = g;
+    mpGame = g; mp.gameId = g.id;
     mp.matchEnded = false;
-    localStorage.setItem('pm_uno_activematch', JSON.stringify({gameId:mp.gameId, code:mp.code}));
+    localStorage.setItem('pm_uno_activematch', JSON.stringify({gameId:mp.gameId}));
     document.getElementById('mpLobby').style.display='none';
     document.getElementById('startOverlay').style.display='none';
     document.getElementById('lbBtn').style.display='none';
@@ -999,14 +1027,12 @@
       '<div class="opp-cards" id="mpOppCards"></div><div class="opp-count" id="mpOppCount"></div>'+
       '<div id="mpOppStale" style="display:none;font-size:11px;color:var(--gold);margin-top:2px;">disconnected</div></div>';
     renderMp();
-
     var patch = {}; patch[myLastSeenField()] = new Date().toISOString();
-    fetch(SUPABASE_URL + '/rest/v1/games?id=eq.'+mp.gameId, { method:'PATCH', headers: mpHeaders(), body: JSON.stringify(patch) });
+    fetch(SUPABASE_URL + '/rest/v1/games?id=eq.'+mp.gameId, { method:'PATCH', headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+SUPABASE_ANON_KEY, 'Content-Type':'application/json' }, body:JSON.stringify(patch) });
     mp.heartbeat = setInterval(function(){
       var p={}; p[myLastSeenField()] = new Date().toISOString();
-      fetch(SUPABASE_URL + '/rest/v1/games?id=eq.'+mp.gameId, { method:'PATCH', headers: mpHeaders(), body: JSON.stringify(p) }).catch(function(){});
+      fetch(SUPABASE_URL + '/rest/v1/games?id=eq.'+mp.gameId, { method:'PATCH', headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+SUPABASE_ANON_KEY, 'Content-Type':'application/json' }, body:JSON.stringify(p) }).catch(function(){});
     }, 8000);
-
     mp.watchdog = setInterval(function(){
       if(!mpGame || mpGame.state.finished) return;
       var lastSeen = mpGame[oppLastSeenField()];
@@ -1028,11 +1054,9 @@
         if(cb){ cb.remove(); row.style.display='none'; }
       }
     }, 5000);
-
     mp.channel = sb.channel('game-'+mp.gameId)
       .on('postgres_changes', {event:'UPDATE', schema:'public', table:'games', filter:'id=eq.'+mp.gameId}, function(payload){
-        mpGame = payload.new;
-        renderMp();
+        mpGame = payload.new; renderMp();
       }).subscribe();
   }
 
@@ -1055,12 +1079,10 @@
     document.getElementById('mpOppCards').innerHTML = cardsHtml;
     document.getElementById('mpOppCount').textContent = oppHand.length+' cards';
     document.getElementById('mpOppBox').className = 'opp'+(!mpIsMyTurn()&&!mpGame.state.finished?' active':'');
-
     var top = mpTop();
     var dc = document.getElementById('discardCard');
     dc.className = 'discard-card '+cardClass({color: top.color==='wild'?mpGame.state.activeColor:top.color});
     dc.textContent = cardLabel(top);
-
     var handEl = document.getElementById('hand');
     handEl.innerHTML = '';
     mpMyHand().forEach(function(card, idx){
@@ -1072,9 +1094,8 @@
       handEl.appendChild(div);
     });
     document.getElementById('handLabel').textContent = 'Your hand ('+mpMyHand().length+')';
-
     if(mpGame.state.finished){
-      setStatus(mpGame.winner_id===mp.meId ? 'You won the match!' : 'Opponent won this one', mpGame.winner_id===mp.meId?'turn-you':'turn-cpu');
+      setStatus(mpGame.winner_id===mp.meId ? 'You won the match! 👻' : 'Opponent won this one', mpGame.winner_id===mp.meId?'turn-you':'turn-cpu');
       localStorage.removeItem('pm_uno_activematch');
       if(!mp.matchEnded){
         mp.matchEnded = true;
@@ -1086,11 +1107,9 @@
           else pts += parseInt(cc.value,10)||0;
         });
         if(mpGame.winner_id===mp.meId){
-          totalScore += pts;
-          localStorage.setItem('pm_uno_score', String(totalScore));
+          totalScore += pts; localStorage.setItem('pm_uno_score', String(totalScore));
           document.getElementById('scorePill').textContent = '$P '+totalScore;
-          submitScore(totalScore);
-          setGhost('excited');
+          submitScore(totalScore); setGhost('excited');
         } else { setGhost('sad'); }
         showEndOverlay(mpGame.winner_id===mp.meId, pts);
         document.getElementById('lbBtn').style.display='flex';
@@ -1105,22 +1124,22 @@
     if(!mpIsMyTurn() || mpGame.state.finished) return;
     var card = mpMyHand()[idx];
     var top = mpTop();
-    if(!canPlay(card, top, mpGame.state.activeColor)) return;
-    if(tg){ tg.HapticFeedback && tg.HapticFeedback.impactOccurred('light'); }
-    if(card.color==='wild'){
-      mpPendingCard = idx;
-      document.getElementById('mpColorPicker').style.display='flex';
-      return;
+    if(card.color==='wild' && card.value==='+4'){
+      var hasColor = mpMyHand().some(function(c,i){ return i!==idx && c.color===mpGame.state.activeColor; });
+      if(hasColor){ toast('Wild +4 illegal \u2014 you have a matching color'); return; }
+    } else if(card.color!=='wild'){
+      if(card.color!==mpGame.state.activeColor && card.value!==top.value) return;
     }
+    if(tg){ tg.HapticFeedback && tg.HapticFeedback.impactOccurred('light'); }
+    if(card.color==='wild'){ mpPendingCard=idx; document.getElementById('mpColorPicker').style.display='flex'; return; }
     mpPlayCard(idx, null);
   }
 
   document.getElementById('mpColorPicker').addEventListener('click', function(e){
     var opt = e.target.closest('.color-opt');
     if(!opt) return;
-    var color = opt.getAttribute('data-color');
     document.getElementById('mpColorPicker').style.display='none';
-    mpPlayCard(mpPendingCard, color);
+    mpPlayCard(mpPendingCard, opt.getAttribute('data-color'));
     mpPendingCard = null;
   });
 
@@ -1131,59 +1150,40 @@
     mpGame.state.discard.push(card);
     mpGame.state.activeColor = card.color==='wild' ? (chosenColor||'purple') : card.color;
     var opp = mpOppId();
-
-    if(hand.length===0){
-      mpGame.state.finished = true;
-      mpGame.status = 'finished';
-      mpGame.winner_id = mp.meId;
-      pushMpState().then(function(){ renderMp(); });
-      renderMp();
-      return;
-    }
-
-    if(card.value==='reverse'){ mpGame.state.turn = mp.meId; }
-    else if(card.value==='skip'){ mpGame.state.turn = mp.meId; toast('Opponent skipped!'); }
+    if(hand.length===0){ mpGame.state.finished=true; mpGame.status='finished'; mpGame.winner_id=mp.meId; pushMpState().then(function(){ renderMp(); }); renderMp(); return; }
+    if(card.value==='reverse'){ mpGame.state.turn=mp.meId; }
+    else if(card.value==='skip'){ mpGame.state.turn=mp.meId; toast('Opponent skipped!'); }
     else if(card.value==='+2'){
-      var oh = mpGame.state.hands[opp];
-      for(var i=0;i<2;i++){ if(mpGame.state.deck.length===0) mpReshuffle(); if(mpGame.state.deck.length) oh.push(mpGame.state.deck.pop()); }
-      mpGame.state.turn = mp.meId;
+      var oh=mpGame.state.hands[opp]; for(var i=0;i<2;i++){ if(mpGame.state.deck.length===0) mpReshuffle(); if(mpGame.state.deck.length) oh.push(mpGame.state.deck.pop()); }
+      mpGame.state.turn=mp.meId; toast('Opponent drew 2!');
     } else if(card.value==='+4'){
-      var oh4 = mpGame.state.hands[opp];
-      for(var j=0;j<4;j++){ if(mpGame.state.deck.length===0) mpReshuffle(); if(mpGame.state.deck.length) oh4.push(mpGame.state.deck.pop()); }
-      mpGame.state.turn = mp.meId;
-    } else {
-      mpGame.state.turn = opp;
-    }
-
-    pushMpState().then(function(){ renderMp(); });
-    renderMp();
+      var oh4=mpGame.state.hands[opp]; for(var j=0;j<4;j++){ if(mpGame.state.deck.length===0) mpReshuffle(); if(mpGame.state.deck.length) oh4.push(mpGame.state.deck.pop()); }
+      mpGame.state.turn=mp.meId; toast('Opponent drew 4!');
+    } else { mpGame.state.turn=opp; }
+    pushMpState().then(function(){ renderMp(); }); renderMp();
   }
+
   function mpReshuffle(){
     var top = mpGame.state.discard.pop();
-    mpGame.state.deck = shuffle(mpGame.state.discard);
+    mpGame.state.deck = shuffle(mpGame.state.discard.slice());
     mpGame.state.discard = [top];
   }
 
   document.getElementById('drawPile').addEventListener('click', function(){
     if(mpGame && !mpGame.state.finished){
       if(!mpIsMyTurn()) return;
-      var hand = mpMyHand();
-      var top = mpTop();
+      var hand = mpMyHand(); var top = mpTop();
       var hasPlayable = hand.some(function(c){ return canPlay(c, top, mpGame.state.activeColor); });
       if(hasPlayable){ toast('You have a playable card'); return; }
       if(mpGame.state.deck.length===0) mpReshuffle();
-      if(mpGame.state.deck.length){ hand.push(mpGame.state.deck.pop()); }
+      if(mpGame.state.deck.length) hand.push(mpGame.state.deck.pop());
       var drawn = hand[hand.length-1];
-      if(!(drawn && canPlay(drawn, top, mpGame.state.activeColor))){
-        mpGame.state.turn = mpOppId();
-      }
-      pushMpState().then(function(){ renderMp(); });
-      renderMp();
-      return;
+      if(!(drawn && canPlay(drawn, top, mpGame.state.activeColor))){ mpGame.state.turn=mpOppId(); }
+      pushMpState().then(function(){ renderMp(); }); renderMp(); return;
     }
   });
 
-  window.addEventListener('beforeunload', function(){ teardownMp(); });
+  window.addEventListener('beforeunload', function(){ teardownMp(); cancelMatchmaking(); });
 })();
 </script>
 </body>
