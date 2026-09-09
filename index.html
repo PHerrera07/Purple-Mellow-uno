@@ -348,11 +348,7 @@
   var sb = LEADERBOARD_ENABLED && window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
   var tgUser = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) ? tg.initDataUnsafe.user : null;
-  var myTelegramId = tgUser ? String(tgUser.id) : 'local_' + (localStorage.getItem('pm_uno_localid') || (function(){
-    var id = 'guest' + Math.floor(Math.random()*1000000);
-    localStorage.setItem('pm_uno_localid', id);
-    return id;
-  })());
+  var myTelegramId = tgUser ? String(tgUser.id) : 'guest_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
   var myUsername = tgUser ? (tgUser.username || tgUser.first_name || 'Ghost') : 'Guest Ghost';
 
   function sbHeaders(extra){
