@@ -963,19 +963,46 @@
             startMpMatch(payload.new, false);
           }).subscribe();
       }
-      // Also poll every 3s as a fallback in case Realtime misses it
+      // Poll every 2s — check for new opponent AND for game created for us
       mp.pollInterval = setInterval(function(){
         if(!document.getElementById('mpLobby') || document.getElementById('mpLobby').style.display==='none'){ clearInterval(mp.pollInterval); return; }
+        // Check if a game was already created for us
         fetch(SUPABASE_URL + '/rest/v1/games?player2_id=eq.'+mp.meId+'&status=eq.active&order=id.desc&limit=1', {
-          headers: writeHeaders()
+          headers: readHeaders()
         }).then(function(r){ return r.json(); }).then(function(rows){
           if(rows && rows.length > 0 && rows[0].id !== mp.gameId){
             clearMatchmaking();
             mp.gameId = rows[0].id;
             startMpMatch(rows[0], false);
+            return;
           }
+          // Check if there's someone else in the queue we can pair with
+          fetch(SUPABASE_URL + '/rest/v1/queue?order=joined_at.asc&limit=5', {
+            headers: readHeaders()
+          }).then(function(r){ return r.json(); }).then(function(qrows){
+            if(!qrows) return;
+            var opp = null;
+            for(var i=0;i<qrows.length;i++){
+              if(qrows[i].player_id !== mp.meId){ opp = qrows[i]; break; }
+            }
+            if(opp){
+              // Try to claim this opponent by deleting them from queue
+              fetch(SUPABASE_URL + '/rest/v1/queue?player_id=eq.' + opp.player_id, {
+                method: 'DELETE', headers: writeHeaders({'Prefer':'return=representation'})
+              }).then(function(r){ return r.json(); }).then(function(deleted){
+                if(deleted && deleted.length > 0){
+                  // Remove self from queue too
+                  fetch(SUPABASE_URL + '/rest/v1/queue?player_id=eq.' + mp.meId, {
+                    method: 'DELETE', headers: writeHeaders()
+                  }).catch(function(){});
+                  clearMatchmaking();
+                  createMatchWith(opp);
+                }
+              }).catch(function(){});
+            }
+          }).catch(function(){});
         }).catch(function(){});
-      }, 3000);
+      }, 2000);
     }).catch(function(){ toastGlobal('Could not join queue'); });
   }
 
