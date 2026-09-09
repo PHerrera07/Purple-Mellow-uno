@@ -334,6 +334,16 @@
 
   var SUPABASE_URL = 'https://ozywcgesxkezmhvyrvxv.supabase.co';
   var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im96eXdjZ2VzeGtlem1odnlydnh2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgxNjA0OTQsImV4cCI6MjEwMzczNjQ5NH0.RaWgR1U7y8vOFSgYu6W6kBQKUbu-dt08X9cg8_t-RAA';
+  var SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im96eXdjZ2VzeGtlem1odnlydnh2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODE2MDQ5NCwiZXhwIjoyMTAzNzM2NDk0fQ.0GR6cNHifCJa8Dyv9RuuWB9bY5NiyY7vKg-CL1lQOsw';
+  // Read with anon key, write with service key
+  function readHeaders(){
+    return { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY, 'Content-Type': 'application/json' };
+  }
+  function writeHeaders(extra){
+    var h = { 'apikey': SUPABASE_SERVICE_KEY, 'Authorization': 'Bearer ' + SUPABASE_SERVICE_KEY, 'Content-Type': 'application/json' };
+    if(extra) for(var k in extra) h[k]=extra[k];
+    return h;
+  }
   var LEADERBOARD_ENABLED = SUPABASE_URL.indexOf('YOUR_') !== 0;
   var sb = LEADERBOARD_ENABLED && window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
@@ -356,8 +366,8 @@
     fetch(SUPABASE_URL + '/rest/v1/leaderboard', {
       method: 'POST',
       headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+        'apikey': SUPABASE_SERVICE_KEY,
+        'Authorization': 'Bearer ' + SUPABASE_SERVICE_KEY,
         'Content-Type': 'application/json',
         'Prefer': 'resolution=merge-duplicates,return=minimal'
       },
@@ -899,7 +909,7 @@
     // Remove stale self from queue first
     fetch(SUPABASE_URL + '/rest/v1/queue?player_id=eq.' + mp.meId, {
       method: 'DELETE',
-      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY }
+      headers: writeHeaders()
     }).then(function(){
       // Small random delay (0-800ms) so two simultaneous players don't collide
       setTimeout(tryMatch, Math.floor(Math.random() * 800));
@@ -917,7 +927,7 @@
   function tryMatch(){
     if(!document.getElementById('mpLobby') || document.getElementById('mpLobby').style.display==='none') return;
     fetch(SUPABASE_URL + '/rest/v1/queue?order=joined_at.asc&limit=1', {
-      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY }
+      headers: writeHeaders()
     }).then(function(r){ return r.json(); }).then(function(rows){
       if(rows && rows.length > 0 && rows[0].player_id !== mp.meId){
         var opp = rows[0];
@@ -944,7 +954,7 @@
     if(!document.getElementById('mpLobby') || document.getElementById('mpLobby').style.display==='none') return;
     fetch(SUPABASE_URL + '/rest/v1/queue', {
       method: 'POST',
-      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      headers: writeHeaders({'Prefer':'return=minimal'}),
       body: JSON.stringify({ player_id: mp.meId, player_name: mp.meName })
     }).then(function(){
       // Watch via Realtime for a game being created for us
@@ -961,7 +971,7 @@
       mp.pollInterval = setInterval(function(){
         if(!document.getElementById('mpLobby') || document.getElementById('mpLobby').style.display==='none'){ clearInterval(mp.pollInterval); return; }
         fetch(SUPABASE_URL + '/rest/v1/games?player2_id=eq.'+mp.meId+'&status=eq.active&order=id.desc&limit=1', {
-          headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY }
+          headers: writeHeaders()
         }).then(function(r){ return r.json(); }).then(function(rows){
           if(rows && rows.length > 0 && rows[0].id !== mp.gameId){
             clearMatchmaking();
@@ -986,13 +996,13 @@
     var code = genCode();
     fetch(SUPABASE_URL + '/rest/v1/games', {
       method: 'POST',
-      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+      headers: writeHeaders({'Prefer':'return=representation'}),
       body: JSON.stringify([{ code:code, player1_id:opp.player_id, player1_name:opp.player_name, player2_id:mp.meId, player2_name:mp.meName, status:'active', state:gameState, last_seen_p1:now, last_seen_p2:now }])
     }).then(function(r){ return r.json(); }).then(function(rows){
       // Remove both players from queue
       fetch(SUPABASE_URL + '/rest/v1/queue?player_id=in.(' + opp.player_id + ',' + mp.meId + ')', {
         method: 'DELETE',
-        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY }
+        headers: writeHeaders()
       }).catch(function(){});
       clearMatchmaking();
       mp.gameId = rows[0].id;
@@ -1011,7 +1021,7 @@
     clearMatchmaking();
     fetch(SUPABASE_URL + '/rest/v1/queue?player_id=eq.' + mp.meId, {
       method: 'DELETE',
-      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY }
+      headers: writeHeaders()
     }).catch(function(){});
   }
 
@@ -1040,7 +1050,7 @@
     var body = { state:mpGame.state, status:mpGame.status, winner_id:mpGame.winner_id||null };
     if(extra) for(var k in extra) body[k]=extra[k];
     return fetch(SUPABASE_URL + '/rest/v1/games?id=eq.'+mp.gameId, {
-      method:'PATCH', headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+SUPABASE_ANON_KEY, 'Content-Type':'application/json' }, body:JSON.stringify(body)
+      method:'PATCH', headers:writeHeaders(), body:JSON.stringify(body)
     });
   }
 
@@ -1061,10 +1071,10 @@
       '<div id="mpOppStale" style="display:none;font-size:11px;color:var(--gold);margin-top:2px;">disconnected</div></div>';
     renderMp();
     var patch = {}; patch[myLastSeenField()] = new Date().toISOString();
-    fetch(SUPABASE_URL + '/rest/v1/games?id=eq.'+mp.gameId, { method:'PATCH', headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+SUPABASE_ANON_KEY, 'Content-Type':'application/json' }, body:JSON.stringify(patch) });
+    fetch(SUPABASE_URL + '/rest/v1/games?id=eq.'+mp.gameId, { method:'PATCH', headers:writeHeaders(), body:JSON.stringify(patch) });
     mp.heartbeat = setInterval(function(){
       var p={}; p[myLastSeenField()] = new Date().toISOString();
-      fetch(SUPABASE_URL + '/rest/v1/games?id=eq.'+mp.gameId, { method:'PATCH', headers:{ 'apikey':SUPABASE_ANON_KEY, 'Authorization':'Bearer '+SUPABASE_ANON_KEY, 'Content-Type':'application/json' }, body:JSON.stringify(p) }).catch(function(){});
+      fetch(SUPABASE_URL + '/rest/v1/games?id=eq.'+mp.gameId, { method:'PATCH', headers:writeHeaders(), body:JSON.stringify(p) }).catch(function(){});
     }, 8000);
     mp.watchdog = setInterval(function(){
       if(!mpGame || mpGame.state.finished) return;
