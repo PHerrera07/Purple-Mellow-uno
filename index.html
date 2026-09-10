@@ -1481,7 +1481,11 @@
   document.getElementById('connectWalletBtn').addEventListener('click', function(){
     var phantom = window.phantom && window.phantom.solana ? window.phantom.solana : window.solana;
     if(!phantom || !phantom.isPhantom){
-      toastGlobal('Phantom not found — open in Phantom browser or install the app');
+      // Inside Telegram or non-Phantom browser — deep link to Phantom browser
+      var gameUrl = encodeURIComponent('https://pherrera07.github.io/Purple-Mellow-uno/');
+      var phantomUrl = 'https://phantom.app/ul/browse/' + gameUrl + '?ref=' + gameUrl;
+      window.open(phantomUrl, '_blank');
+      toastGlobal('Opening in Phantom browser...');
       return;
     }
     phantom.connect().then(function(resp){
