@@ -375,11 +375,7 @@
     if(!LEADERBOARD_ENABLED){ cb(null); return; }
     fetch(SUPABASE_URL + '/rest/v1/leaderboard?select=username,score,telegram_id&order=score.desc&limit=20', {
       method: 'GET',
-      headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
-        'Content-Type': 'application/json'
-      }
+      headers: writeHeaders()
     })
     .then(function(r){
       if(!r.ok) throw new Error('HTTP ' + r.status);
@@ -968,8 +964,9 @@
         if(!document.getElementById('mpLobby') || document.getElementById('mpLobby').style.display==='none'){ clearInterval(mp.pollInterval); return; }
         // Check if a game was already created for us
         fetch(SUPABASE_URL + '/rest/v1/games?player2_id=eq.'+mp.meId+'&status=eq.active&order=id.desc&limit=1', {
-          headers: readHeaders()
+          headers: writeHeaders()
         }).then(function(r){ return r.json(); }).then(function(rows){
+          console.log('Game check:', rows);
           if(rows && rows.length > 0 && rows[0].id !== mp.gameId){
             clearMatchmaking();
             mp.gameId = rows[0].id;
@@ -978,18 +975,21 @@
           }
           // Check if there's someone else in the queue we can pair with
           fetch(SUPABASE_URL + '/rest/v1/queue?order=joined_at.asc&limit=5', {
-            headers: readHeaders()
+            headers: writeHeaders()
           }).then(function(r){ return r.json(); }).then(function(qrows){
+            console.log('Queue check:', qrows, 'my id:', mp.meId);
             if(!qrows) return;
             var opp = null;
             for(var i=0;i<qrows.length;i++){
               if(qrows[i].player_id !== mp.meId){ opp = qrows[i]; break; }
             }
+            console.log('Found opponent:', opp);
             if(opp){
               // Try to claim this opponent by deleting them from queue
               fetch(SUPABASE_URL + '/rest/v1/queue?player_id=eq.' + opp.player_id, {
                 method: 'DELETE', headers: writeHeaders({'Prefer':'return=representation'})
               }).then(function(r){ return r.json(); }).then(function(deleted){
+                console.log('Delete result:', deleted);
                 if(deleted && deleted.length > 0){
                   // Remove self from queue too
                   fetch(SUPABASE_URL + '/rest/v1/queue?player_id=eq.' + mp.meId, {
@@ -998,10 +998,10 @@
                   clearMatchmaking();
                   createMatchWith(opp);
                 }
-              }).catch(function(){});
+              }).catch(function(e){ console.log('Delete error:', e); });
             }
-          }).catch(function(){});
-        }).catch(function(){});
+          }).catch(function(e){ console.log('Queue fetch error:', e); });
+        }).catch(function(e){ console.log('Game fetch error:', e); });
       }, 2000);
     }).catch(function(){ toastGlobal('Could not join queue'); });
   }
