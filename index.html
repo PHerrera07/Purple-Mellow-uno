@@ -248,6 +248,7 @@
     <div class="brand"><span class="dot"></span>PURPLE MELLOW</div>
     <div style="display:flex;gap:8px;align-items:center;">
       <div class="score-pill" id="rewardsBtn" style="cursor:pointer;">🎁</div>
+      <div class="score-pill" id="tourneyBtn" style="cursor:pointer;">🏟️</div>
       <div class="score-pill" id="lbBtn" style="cursor:pointer;">🏆</div>
       <div class="score-pill" id="scorePill">$P 0</div>
     </div>
@@ -296,8 +297,47 @@
   <div class="overlay" id="lbOverlay" style="display:none;">
     <div class="big-ghost">🏆</div>
     <h1>Leaderboard</h1>
-    <div id="lbList" style="width:100%;max-width:300px;display:flex;flex-direction:column;gap:6px;max-height:340px;overflow-y:auto;"></div>
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
+      <button class="btn" id="lbAllTimeBtn" style="flex:1;background:rgba(139,92,246,0.3);">All Time</button>
+      <button class="btn" id="lbWeeklyBtn" style="flex:1;">This Week</button>
+    </div>
+    <div id="lbList" style="width:100%;max-width:300px;display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto;"></div>
+    <p id="weeklyPrizeNote" style="display:none;font-size:11px;color:var(--gold);text-align:center;margin:4px 0;">🏆 Weekly prizes: 1st 5,000 $P · 2nd 2,500 $P · 3rd 1,000 $P</p>
     <button class="primary-btn" id="lbCloseBtn">Close</button>
+  </div>
+
+  <div class="overlay" id="tourneyOverlay" style="display:none;">
+    <div style="width:100%;max-width:320px;display:flex;flex-direction:column;gap:12px;max-height:80vh;overflow-y:auto;">
+      <div style="text-align:center;">
+        <div style="font-size:48px;">🏟️</div>
+        <h1 style="margin:8px 0 4px;font-size:22px;color:var(--gold);">Tournament</h1>
+        <p style="color:var(--muted);font-size:13px;margin:0;">Create or join a tournament. Win the bracket, earn bonus $P.</p>
+      </div>
+
+      <div style="display:flex;gap:8px;">
+        <button class="primary-btn" id="createTourneyBtn" style="flex:1;padding:10px;font-size:13px;">+ Create</button>
+        <div style="flex:1;display:flex;gap:6px;">
+          <input id="tourneyCodeInput" placeholder="Code" maxlength="5" style="flex:1;text-align:center;text-transform:uppercase;font-size:14px;font-weight:800;padding:8px;border-radius:10px;border:1px solid var(--purple);background:rgba(255,255,255,0.05);color:var(--text);">
+          <button class="btn" id="joinTourneyBtn">Join</button>
+        </div>
+      </div>
+
+      <div id="tourneyStatus" style="display:none;background:rgba(139,92,246,0.1);border:1px solid var(--purple);border-radius:14px;padding:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="font-weight:800;font-size:15px;" id="tourneyTitle">Tournament</div>
+          <div class="score-pill" id="tourneyCode" style="font-size:14px;letter-spacing:2px;"></div>
+        </div>
+        <div id="tourneyPlayers" style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px;"></div>
+        <div id="tourneyBracket" style="display:flex;flex-direction:column;gap:6px;"></div>
+        <button class="primary-btn" id="startTourneyBtn" style="display:none;width:100%;margin-top:8px;">Start Tournament</button>
+        <div id="tourneyWinner" style="display:none;text-align:center;padding:8px;">
+          <div style="font-size:24px;">👑</div>
+          <div id="tourneyWinnerName" style="font-weight:800;color:var(--gold);font-size:16px;"></div>
+          <div style="font-size:12px;color:var(--muted);">Tournament Winner</div>
+        </div>
+      </div>
+    </div>
+    <button class="primary-btn" id="tourneyCloseBtn">Close</button>
   </div>
 
   <div class="overlay" id="rewardsOverlay" style="display:none;">
@@ -665,6 +705,7 @@
       document.getElementById('scorePill').textContent = '$P '+totalScore;
       submitScore(totalScore);
       updateGamesPlayed();
+      updateWeeklyScore(pts);
       setGhost('excited');
       showEndOverlay(true, pts);
       if(tg){ tg.HapticFeedback && tg.HapticFeedback.notificationOccurred('success'); }
@@ -897,26 +938,37 @@
       return;
     }
     list.innerHTML = '<p style="color:var(--muted);font-size:13px;">Loading...</p>';
-    fetchLeaderboard(function(data){
-      if(!data){
-        list.innerHTML = '<p style="color:var(--muted);font-size:13px;">Could not load leaderboard.</p>';
-        return;
-      }
-      if(data.length===0){
-        list.innerHTML = '<p style="color:var(--muted);font-size:13px;">No scores yet. Be the first ghost!</p>';
-        return;
-      }
-      list.innerHTML = '';
-      data.forEach(function(row, i){
-        var isMe = row.telegram_id === myTelegramId;
-        var div = document.createElement('div');
-        div.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-radius:10px;background:'+(isMe?'rgba(139,92,246,0.25)':'rgba(255,255,255,0.04)')+';border:1px solid '+(isMe?'var(--purple)':'transparent')+';';
-        div.innerHTML =
-          '<span style="font-size:13px;font-weight:700;color:'+(i<3?'var(--gold)':'var(--text)')+';">#'+(i+1)+' '+(isMe?'You':row.username)+'</span>'+
-          '<span style="font-size:13px;font-weight:800;color:var(--gold);">'+row.score+'</span>';
-        list.appendChild(div);
+    if(lbMode === 'weekly'){
+      fetchWeeklyLeaderboard(function(data){
+        if(!data){ list.innerHTML = '<p style="color:var(--muted);font-size:13px;">Could not load leaderboard.</p>'; return; }
+        if(data.length===0){ list.innerHTML = '<p style="color:var(--muted);font-size:13px;">No scores yet this week!</p>'; return; }
+        list.innerHTML = '';
+        data.forEach(function(row, i){
+          var isMe = row.telegram_id === myTelegramId;
+          var medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':'';
+          var bonus = i===0?'+5,000 $P':i===1?'+2,500 $P':i===2?'+1,000 $P':'';
+          var div = document.createElement('div');
+          div.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-radius:10px;background:'+(isMe?'rgba(139,92,246,0.25)':'rgba(255,255,255,0.04)')+';border:1px solid '+(isMe?'var(--purple)':'transparent')+';';
+          div.innerHTML = '<span style="font-size:13px;font-weight:700;color:'+(i<3?'var(--gold)':'var(--text)')+';">'+medal+' #'+(i+1)+' '+(isMe?'You':row.username)+'</span>'+
+            '<div style="text-align:right;"><div style="font-size:13px;font-weight:800;color:var(--gold);">'+(row.weekly_score||0)+'</div>'+(bonus?'<div style="font-size:10px;color:var(--green);">'+bonus+'</div>':'')+'</div>';
+          list.appendChild(div);
+        });
       });
-    });
+    } else {
+      fetchLeaderboard(function(data){
+        if(!data){ list.innerHTML = '<p style="color:var(--muted);font-size:13px;">Could not load leaderboard.</p>'; return; }
+        if(data.length===0){ list.innerHTML = '<p style="color:var(--muted);font-size:13px;">No scores yet. Be the first ghost!</p>'; return; }
+        list.innerHTML = '';
+        data.forEach(function(row, i){
+          var isMe = row.telegram_id === myTelegramId;
+          var div = document.createElement('div');
+          div.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-radius:10px;background:'+(isMe?'rgba(139,92,246,0.25)':'rgba(255,255,255,0.04)')+';border:1px solid '+(isMe?'var(--purple)':'transparent')+';';
+          div.innerHTML = '<span style="font-size:13px;font-weight:700;color:'+(i<3?'var(--gold)':'var(--text)')+';">#'+(i+1)+' '+(isMe?'You':row.username)+'</span>'+
+            '<span style="font-size:13px;font-weight:800;color:var(--gold);">'+row.score+'</span>';
+          list.appendChild(div);
+        });
+      });
+    }
   }
 
   document.getElementById('lbBtn').addEventListener('click', function(){
@@ -1261,7 +1313,7 @@
         if(mpGame.winner_id===mp.meId){
           totalScore += pts; localStorage.setItem('pm_uno_score', String(totalScore));
           document.getElementById('scorePill').textContent = '$P '+totalScore;
-          submitScore(totalScore); updateGamesPlayed(); setGhost('excited');
+          submitScore(totalScore); updateGamesPlayed(); updateWeeklyScore(pts); setGhost('excited');
         } else { setGhost('sad'); }
         showEndOverlay(mpGame.winner_id===mp.meId, pts);
         document.getElementById('lbBtn').style.display='flex';
@@ -1504,6 +1556,237 @@
 
   // Check referral on load
   checkReferral();
+
+  // ---------- Weekly Leaderboard ----------
+  var lbMode = 'alltime';
+  document.getElementById('lbAllTimeBtn').addEventListener('click', function(){
+    lbMode = 'alltime';
+    document.getElementById('lbAllTimeBtn').style.background = 'rgba(139,92,246,0.3)';
+    document.getElementById('lbWeeklyBtn').style.background = '';
+    document.getElementById('weeklyPrizeNote').style.display = 'none';
+    renderLeaderboard();
+  });
+  document.getElementById('lbWeeklyBtn').addEventListener('click', function(){
+    lbMode = 'weekly';
+    document.getElementById('lbWeeklyBtn').style.background = 'rgba(139,92,246,0.3)';
+    document.getElementById('lbAllTimeBtn').style.background = '';
+    document.getElementById('weeklyPrizeNote').style.display = 'block';
+    renderLeaderboard();
+  });
+
+  function fetchWeeklyLeaderboard(cb){
+    fetch(SUPABASE_URL + '/rest/v1/leaderboard?select=username,weekly_score,telegram_id&order=weekly_score.desc&limit=20', {
+      headers: writeHeaders()
+    }).then(function(r){ return r.json(); }).then(function(data){ cb(data); }).catch(function(){ cb(null); });
+  }
+
+  function updateWeeklyScore(pts){
+    // Reset weekly score if new week
+    var now = new Date();
+    var weekStart = new Date(now);
+    weekStart.setUTCHours(0,0,0,0);
+    weekStart.setUTCDate(now.getUTCDate() - now.getUTCDay()); // Monday
+    fetch(SUPABASE_URL + '/rest/v1/leaderboard?telegram_id=eq.'+myTelegramId, {
+      headers: writeHeaders()
+    }).then(function(r){ return r.json(); }).then(function(rows){
+      if(!rows || !rows[0]) return;
+      var row = rows[0];
+      var storedWeekStart = row.week_start ? new Date(row.week_start) : null;
+      var isNewWeek = !storedWeekStart || storedWeekStart < weekStart;
+      var newWeeklyScore = isNewWeek ? pts : (row.weekly_score||0) + pts;
+      fetch(SUPABASE_URL + '/rest/v1/leaderboard?telegram_id=eq.'+myTelegramId, {
+        method: 'PATCH', headers: writeHeaders(),
+        body: JSON.stringify({ weekly_score: newWeeklyScore, week_start: isNewWeek ? weekStart.toISOString() : row.week_start })
+      }).catch(function(){});
+    }).catch(function(){});
+  }
+
+  // ---------- Tournament ----------
+  var tourney = { id: null, code: null, isHost: false, channel: null, pollInterval: null };
+
+  function genTourneyCode(){
+    var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    var out=''; for(var i=0;i<5;i++) out += chars[Math.floor(Math.random()*chars.length)];
+    return out;
+  }
+
+  document.getElementById('tourneyBtn').addEventListener('click', function(){
+    document.getElementById('tourneyOverlay').style.display='flex';
+    if(tourney.id) loadTourneyStatus();
+  });
+  document.getElementById('tourneyCloseBtn').addEventListener('click', function(){
+    document.getElementById('tourneyOverlay').style.display='none';
+  });
+
+  document.getElementById('createTourneyBtn').addEventListener('click', function(){
+    var code = genTourneyCode();
+    var player = { id: myTelegramId, name: myUsername };
+    fetch(SUPABASE_URL + '/rest/v1/tournaments', {
+      method: 'POST', headers: writeHeaders({'Prefer':'return=representation'}),
+      body: JSON.stringify([{ code: code, host_id: myTelegramId, host_name: myUsername, players: [player], status: 'waiting' }])
+    }).then(function(r){ return r.json(); }).then(function(rows){
+      tourney.id = rows[0].id; tourney.code = code; tourney.isHost = true;
+      document.getElementById('tourneyStatus').style.display='block';
+      document.getElementById('tourneyCode').textContent = code;
+      document.getElementById('tourneyTitle').textContent = myUsername+"'s Tournament";
+      document.getElementById('startTourneyBtn').style.display='block';
+      renderTourneyPlayers([player]);
+      subscribeTourney(rows[0].id);
+      toastGlobal('Tournament created! Share code: ' + code);
+    }).catch(function(){ toastGlobal('Could not create tournament'); });
+  });
+
+  document.getElementById('joinTourneyBtn').addEventListener('click', function(){
+    var code = document.getElementById('tourneyCodeInput').value.trim().toUpperCase();
+    if(!code){ toastGlobal('Enter a tournament code'); return; }
+    fetch(SUPABASE_URL + '/rest/v1/tournaments?code=eq.'+code+'&status=eq.waiting&select=*', {
+      headers: writeHeaders()
+    }).then(function(r){ return r.json(); }).then(function(rows){
+      if(!rows || rows.length===0){ toastGlobal('No open tournament with that code'); return; }
+      var t = rows[0];
+      var players = t.players || [];
+      if(players.length >= t.max_players){ toastGlobal('Tournament is full'); return; }
+      if(players.find(function(p){ return p.id===myTelegramId; })){ toastGlobal('Already in this tournament'); return; }
+      players.push({ id: myTelegramId, name: myUsername });
+      fetch(SUPABASE_URL + '/rest/v1/tournaments?id=eq.'+t.id, {
+        method: 'PATCH', headers: writeHeaders(),
+        body: JSON.stringify({ players: players })
+      }).then(function(){
+        tourney.id = t.id; tourney.code = code; tourney.isHost = false;
+        document.getElementById('tourneyStatus').style.display='block';
+        document.getElementById('tourneyCode').textContent = code;
+        document.getElementById('tourneyTitle').textContent = t.host_name+"'s Tournament";
+        renderTourneyPlayers(players);
+        subscribeTourney(t.id);
+        toastGlobal('Joined tournament!');
+      }).catch(function(){ toastGlobal('Could not join tournament'); });
+    }).catch(function(){ toastGlobal('Could not find tournament'); });
+  });
+
+  document.getElementById('startTourneyBtn').addEventListener('click', function(){
+    if(!tourney.isHost) return;
+    fetch(SUPABASE_URL + '/rest/v1/tournaments?id=eq.'+tourney.id+'&select=*', {
+      headers: writeHeaders()
+    }).then(function(r){ return r.json(); }).then(function(rows){
+      var t = rows[0];
+      var players = t.players || [];
+      if(players.length < 2){ toastGlobal('Need at least 2 players'); return; }
+      var shuffled = players.sort(function(){ return Math.random()-0.5; });
+      var bracket = [];
+      for(var i=0; i<shuffled.length; i+=2){
+        if(shuffled[i+1]){
+          bracket.push({ p1: shuffled[i], p2: shuffled[i+1], winner: null, gameCode: null });
+        } else {
+          bracket.push({ p1: shuffled[i], p2: null, winner: shuffled[i], gameCode: null, bye: true });
+        }
+      }
+      fetch(SUPABASE_URL + '/rest/v1/tournaments?id=eq.'+tourney.id, {
+        method: 'PATCH', headers: writeHeaders(),
+        body: JSON.stringify({ status: 'active', bracket: bracket })
+      }).then(function(){
+        // Create games for each bracket match
+        bracket.forEach(function(match){
+          if(match.bye) return;
+          var deck = shuffle(buildDeck());
+          var hands = {}; hands[match.p1.id]=[]; hands[match.p2.id]=[];
+          for(var i=0;i<7;i++){ hands[match.p1.id].push(deck.pop()); hands[match.p2.id].push(deck.pop()); }
+          var top = deck.pop();
+          while(top.value==='+4'){ deck.unshift(top); shuffle(deck); top = deck.pop(); }
+          var code = genTourneyCode();
+          match.gameCode = code;
+          fetch(SUPABASE_URL + '/rest/v1/games', {
+            method: 'POST', headers: writeHeaders({'Prefer':'return=minimal'}),
+            body: JSON.stringify([{ code: code, player1_id: match.p1.id, player1_name: match.p1.name,
+              player2_id: match.p2.id, player2_name: match.p2.name, status: 'active',
+              state: { deck:deck, discard:[top], hands:hands, turn:match.p1.id, direction:1, activeColor:top.color, finished:false },
+              last_seen_p1: new Date().toISOString(), last_seen_p2: new Date().toISOString() }])
+          }).catch(function(){});
+        });
+        fetch(SUPABASE_URL + '/rest/v1/tournaments?id=eq.'+tourney.id, {
+          method: 'PATCH', headers: writeHeaders(),
+          body: JSON.stringify({ bracket: bracket })
+        }).catch(function(){});
+        toastGlobal('Tournament started! Check your match.');
+      });
+    });
+  });
+
+  function renderTourneyPlayers(players){
+    var el = document.getElementById('tourneyPlayers');
+    el.innerHTML = '<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">PLAYERS ('+players.length+')</div>';
+    players.forEach(function(p){
+      var div = document.createElement('div');
+      div.style.cssText = 'font-size:13px;padding:4px 8px;border-radius:8px;background:rgba(255,255,255,0.05);'+(p.id===myTelegramId?'border:1px solid var(--purple)':'');
+      div.textContent = (p.id===myTelegramId?'👻 ':'')+p.name;
+      el.appendChild(div);
+    });
+  }
+
+  function renderTourneyBracket(bracket){
+    var el = document.getElementById('tourneyBracket');
+    el.innerHTML = '<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">BRACKET</div>';
+    bracket.forEach(function(match, i){
+      var div = document.createElement('div');
+      div.style.cssText = 'background:rgba(255,255,255,0.04);border-radius:10px;padding:8px;font-size:12px;';
+      var p1 = match.p1 ? match.p1.name : 'TBD';
+      var p2 = match.p2 ? match.p2.name : 'BYE';
+      var winner = match.winner ? '🏆 '+match.winner.name : (match.bye?'Auto advance':'In progress...');
+      div.innerHTML = '<div style="font-weight:700;margin-bottom:4px;">Match '+(i+1)+'</div>'+
+        '<div style="color:'+(match.winner&&match.winner.id===match.p1.id?'var(--green)':'var(--text)')+';">'+p1+'</div>'+
+        '<div style="color:var(--muted);font-size:10px;">vs</div>'+
+        '<div style="color:'+(match.winner&&match.winner.id===match.p2.id?'var(--green)':'var(--text)')+';">'+p2+'</div>'+
+        '<div style="color:var(--gold);font-size:11px;margin-top:4px;">'+winner+'</div>';
+      el.appendChild(div);
+    });
+  }
+
+  function subscribeTourney(id){
+    if(sb){
+      tourney.channel = sb.channel('tourney-'+id)
+        .on('postgres_changes', { event:'UPDATE', schema:'public', table:'tournaments', filter:'id=eq.'+id }, function(payload){
+          var t = payload.new;
+          if(t.players) renderTourneyPlayers(t.players);
+          if(t.bracket) renderTourneyBracket(t.bracket);
+          if(t.winner_id){
+            document.getElementById('tourneyWinner').style.display='block';
+            document.getElementById('tourneyWinnerName').textContent = t.winner_name;
+            if(t.winner_id===myTelegramId){
+              toastGlobal('You won the tournament! 👑');
+              // Award bonus $P
+              totalScore += t.bonus_p;
+              localStorage.setItem('pm_uno_score', String(totalScore));
+              document.getElementById('scorePill').textContent = '$P '+totalScore;
+              submitScore(totalScore);
+              fetch(SUPABASE_URL + '/rest/v1/leaderboard?telegram_id=eq.'+myTelegramId, {
+                method:'PATCH', headers:writeHeaders(),
+                body:JSON.stringify({ tournament_wins:1, tournament_bonus:t.bonus_p })
+              }).catch(function(){});
+            }
+          }
+          if(t.status==='active' && t.bracket){
+            var myMatch = t.bracket.find(function(m){ return m.p1&&m.p1.id===myTelegramId||m.p2&&m.p2.id===myTelegramId; });
+            if(myMatch && !myMatch.winner && myMatch.gameCode){
+              toastGlobal('Your match is ready! Find it in matchmaking.');
+            }
+          }
+        }).subscribe();
+    }
+  }
+
+  function loadTourneyStatus(){
+    fetch(SUPABASE_URL + '/rest/v1/tournaments?id=eq.'+tourney.id+'&select=*', {
+      headers: writeHeaders()
+    }).then(function(r){ return r.json(); }).then(function(rows){
+      if(!rows || !rows[0]) return;
+      var t = rows[0];
+      if(t.players) renderTourneyPlayers(t.players);
+      if(t.bracket) renderTourneyBracket(t.bracket);
+      if(t.winner_id){
+        document.getElementById('tourneyWinner').style.display='block';
+        document.getElementById('tourneyWinnerName').textContent = t.winner_name;
+      }
+    }).catch(function(){});
+  }
 
   window.addEventListener('beforeunload', function(){ teardownMp(); cancelMatchmaking(); });
 })();
